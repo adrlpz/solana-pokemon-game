@@ -1,5 +1,8 @@
 // Game constants matching on-chain programs
 
+export const SOLMON_CLUSTER = 'devnet';
+export const SOLMON_RPC = 'https://api.devnet.solana.com';
+
 export const ELEMENTS = ['Fire', 'Water', 'Earth', 'Electric', 'Shadow', 'Light'] as const;
 export type Element = (typeof ELEMENTS)[number];
 
