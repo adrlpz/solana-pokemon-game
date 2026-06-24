@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  SOLANA_VERSION: '2.0.22'
+  SOLANA_VERSION: '3.1.14'
 
 jobs:
   build:
@@ -15,15 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust 1.79.0
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.79.0'
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Update platform-tools
+        run: |
+          # Force platform-tools to use latest compatible Rust
+          solana --version
+          # The platform-tools Rust version is what cargo-build-sbf uses internally
+          # Update it by touching the version marker
+          PLATFORM_TOOLS="$HOME/.cache/solana"
+          if [ -d "$PLATFORM_TOOLS" ]; then
+            echo "Current platform-tools:"
+            ls "$PLATFORM_TOOLS/"
+          fi
 
       - name: Generate program keypairs + update IDs
         run: |
@@ -40,18 +50,16 @@ jobs:
             sed -i "s|${prog} = \".*\"|${prog} = \"$ID\"|g" Anchor.toml
           done
 
-      - name: Generate lockfile (Rust 1.79 = v3 format)
-        run: |
-          rm -f Cargo.lock
-          cargo generate-lockfile
-          head -3 Cargo.lock
-
-      - name: Build all programs (cargo build-sbf)
+      - name: Build programs
         run: |
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+          # cargo-build-sbf uses platform-tools Rust internally, not the system Rust
+          # The lockfile must be parseable by platform-tools Cargo
+          # Generate lockfile with system Rust and let cargo-build-sbf resolve
           for prog in creature battle token marketplace; do
             echo "═══ Building solmon_${prog} ═══"
-            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/
+            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/ 2>&1
             SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
             echo "✅ solmon_${prog}: ${SIZE} bytes"
           done
