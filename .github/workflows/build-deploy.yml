@@ -7,6 +7,7 @@ on:
 
 env:
   SOLANA_VERSION: '1.18.26'
+  ANCHOR_VERSION: '0.30.1'
 
 jobs:
   build:
@@ -14,14 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Solana
-        uses: solana-labs/actions/setup-solana@v1
-        with:
-          version: ${{ env.SOLANA_VERSION }}
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: Install Anchor CLI
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli --locked
+          cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
 
       - name: Generate program keypairs
         run: |
@@ -31,7 +35,6 @@ jobs:
           solana-keygen new --no-bip39-passphrase -o target/deploy/token-keypair.json
           solana-keygen new --no-bip39-passphrase -o target/deploy/marketplace-keypair.json
 
-          # Update Anchor.toml with generated program IDs
           CREATURE_ID=$(solana-keygen pubkey target/deploy/creature-keypair.json)
           BATTLE_ID=$(solana-keygen pubkey target/deploy/battle-keypair.json)
           TOKEN_ID=$(solana-keygen pubkey target/deploy/token-keypair.json)
@@ -43,13 +46,11 @@ jobs:
           echo "  Token:       $TOKEN_ID"
           echo "  Marketplace: $MARKETPLACE_ID"
 
-          # Update declare_id in source
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$CREATURE_ID\")/" programs/creature/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$BATTLE_ID\")/" programs/battle/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$TOKEN_ID\")/" programs/token/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$MARKETPLACE_ID\")/" programs/marketplace/src/lib.rs
 
-          # Update Anchor.toml
           sed -i "s|creature = \".*\"|creature = \"$CREATURE_ID\"|g" Anchor.toml
           sed -i "s|battle = \".*\"|battle = \"$BATTLE_ID\"|g" Anchor.toml
           sed -i "s|token = \".*\"|token = \"$TOKEN_ID\"|g" Anchor.toml
