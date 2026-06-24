@@ -7,7 +7,7 @@ on:
 
 env:
   SOLANA_VERSION: '1.18.26'
-  RUST_VERSION: '1.75.0'
+  RUST_VERSION: '1.79.0'
 
 jobs:
   build:
