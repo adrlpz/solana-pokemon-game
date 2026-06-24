@@ -4,10 +4,10 @@ import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { useMemo } from 'react';
 
 // Program IDs (match Anchor.toml)
-export const CREATURE_PROGRAM_ID = new PublicKey('Crea1111111111111111111111111111111111111111');
-export const BATTLE_PROGRAM_ID = new PublicKey('Batt1e1111111111111111111111111111111111111111');
-export const TOKEN_PROGRAM_ID = new PublicKey('TokeN11111111111111111111111111111111111111111');
-export const MARKETPLACE_PROGRAM_ID = new PublicKey('Marke7111111111111111111111111111111111111111');
+export const CREATURE_PROGRAM_ID = new PublicKey('5fbkSTigPB76nwTW2Pea4D8oKG5Y3LhjaNWMLCGqoyjL');
+export const BATTLE_PROGRAM_ID = new PublicKey('8cfzkYSLCAmFzYNVszjQS7gg4vt4aX1QHvo6FnBHsTXD');
+export const TOKEN_PROGRAM_ID = new PublicKey('PuvPe2KwWqMz5Z5cBfqiaE5a8uPtmVNKbKJhgkNwXMq');
+export const MARKETPLACE_PROGRAM_ID = new PublicKey('BCfwGoEyzqkpDcSoXVVRgeHDf59fZZfcS4uc8X948PxF');
 
 // PDA seeds
 export const PROFILE_SEED = 'profile';

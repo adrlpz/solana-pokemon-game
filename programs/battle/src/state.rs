@@ -46,6 +46,7 @@ pub struct BattleSession {
     pub timeout_count1: u8,             // 1
     pub timeout_count2: u8,             // 1
     pub winner: Option<Pubkey>,         // 1 + 32
+    #[max_len(50)]
     pub turn_log: Vec<TurnEntry>,       // 4 + n*~20 (max 50 turns)
     pub created_at: i64,                // 8
     pub timeout_at: i64,                // 8

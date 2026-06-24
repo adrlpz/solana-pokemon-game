@@ -5,16 +5,16 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-creature = "Crea1111111111111111111111111111111111111111"
-battle = "Batt1e1111111111111111111111111111111111111111"
-token = "TokeN11111111111111111111111111111111111111111"
-marketplace = "Marke7111111111111111111111111111111111111111"
+creature = "5fbkSTigPB76nwTW2Pea4D8oKG5Y3LhjaNWMLCGqoyjL"
+battle = "8cfzkYSLCAmFzYNVszjQS7gg4vt4aX1QHvo6FnBHsTXD"
+token = "PuvPe2KwWqMz5Z5cBfqiaE5a8uPtmVNKbKJhgkNwXMq"
+marketplace = "BCfwGoEyzqkpDcSoXVVRgeHDf59fZZfcS4uc8X948PxF"
 
 [programs.devnet]
-creature = "Crea1111111111111111111111111111111111111111"
-battle = "Batt1e1111111111111111111111111111111111111111"
-token = "TokeN11111111111111111111111111111111111111111"
-marketplace = "Marke7111111111111111111111111111111111111111"
+creature = "5fbkSTigPB76nwTW2Pea4D8oKG5Y3LhjaNWMLCGqoyjL"
+battle = "8cfzkYSLCAmFzYNVszjQS7gg4vt4aX1QHvo6FnBHsTXD"
+token = "PuvPe2KwWqMz5Z5cBfqiaE5a8uPtmVNKbKJhgkNwXMq"
+marketplace = "BCfwGoEyzqkpDcSoXVVRgeHDf59fZZfcS4uc8X948PxF"
 
 [registry]
 url = "https://api.apr.dev"

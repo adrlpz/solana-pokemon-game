@@ -9,7 +9,7 @@ use constants::*;
 use errors::*;
 use state::*;
 
-declare_id!("Batt1e1111111111111111111111111111111111111111");
+declare_id!("8cfzkYSLCAmFzYNVszjQS7gg4vt4aX1QHvo6FnBHsTXD");
 
 #[program]
 pub mod solmon_battle {
@@ -22,27 +22,29 @@ pub mod solmon_battle {
         ctx: Context<CreateBattle>,
         wager: u64,
     ) -> Result<()> {
-        let battle = &mut ctx.accounts.battle_session;
-        battle.player1 = ctx.accounts.player1.key();
-        battle.player2 = Pubkey::default();
-        battle.squad1 = [BattleMonster::default(); 3];
-        battle.squad2 = [BattleMonster::default(); 3];
-        battle.active1 = 0;
-        battle.active2 = 0;
-        battle.state = BattleState::Waiting;
-        battle.current_turn = 0;
-        battle.wager = wager;
-        battle.commitment1 = [0u8; 32];
-        battle.commitment2 = [0u8; 32];
-        battle.revealed1 = None;
-        battle.revealed2 = None;
-        battle.timeout_count1 = 0;
-        battle.timeout_count2 = 0;
-        battle.winner = None;
-        battle.turn_log = Vec::new();
-        battle.created_at = Clock::get()?.unix_timestamp;
-        battle.timeout_at = Clock::get()?.unix_timestamp + QUEUE_TIMEOUT;
-        battle.bump = ctx.bumps.battle_session;
+        {
+            let battle = &mut ctx.accounts.battle_session;
+            battle.player1 = ctx.accounts.player1.key();
+            battle.player2 = Pubkey::default();
+            battle.squad1 = [BattleMonster::default(); 3];
+            battle.squad2 = [BattleMonster::default(); 3];
+            battle.active1 = 0;
+            battle.active2 = 0;
+            battle.state = BattleState::Waiting;
+            battle.current_turn = 0;
+            battle.wager = wager;
+            battle.commitment1 = [0u8; 32];
+            battle.commitment2 = [0u8; 32];
+            battle.revealed1 = None;
+            battle.revealed2 = None;
+            battle.timeout_count1 = 0;
+            battle.timeout_count2 = 0;
+            battle.winner = None;
+            battle.turn_log = Vec::new();
+            battle.created_at = Clock::get()?.unix_timestamp;
+            battle.timeout_at = Clock::get()?.unix_timestamp + QUEUE_TIMEOUT;
+            battle.bump = ctx.bumps.battle_session;
+        }
 
         // Escrow wager from player1
         if wager > 0 {
@@ -60,7 +62,7 @@ pub mod solmon_battle {
             )?;
         }
 
-        msg!("Battle created by {} | wager: {} lamports", battle.player1, wager);
+        msg!("Battle created by {} | wager: {} lamports", ctx.accounts.battle_session.player1, wager);
         Ok(())
     }
 
@@ -68,20 +70,23 @@ pub mod solmon_battle {
 
     /// Join an existing battle
     pub fn join_battle(ctx: Context<JoinBattle>) -> Result<()> {
-        let battle = &mut ctx.accounts.battle_session;
-        require!(battle.state == BattleState::Waiting, BattleError::BattleNotWaiting);
-        require!(battle.player2 == Pubkey::default(), BattleError::BattleFull);
+        require!(ctx.accounts.battle_session.state == BattleState::Waiting, BattleError::BattleNotWaiting);
+        require!(ctx.accounts.battle_session.player2 == Pubkey::default(), BattleError::BattleFull);
 
-        battle.player2 = ctx.accounts.player2.key();
-        battle.state = BattleState::SelectSquad;
-        battle.timeout_at = Clock::get()?.unix_timestamp + SQUAD_SELECT_TIMEOUT;
+        let wager = ctx.accounts.battle_session.wager;
+        {
+            let battle = &mut ctx.accounts.battle_session;
+            battle.player2 = ctx.accounts.player2.key();
+            battle.state = BattleState::SelectSquad;
+            battle.timeout_at = Clock::get()?.unix_timestamp + SQUAD_SELECT_TIMEOUT;
+        }
 
         // Escrow wager from player2
-        if battle.wager > 0 {
+        if wager > 0 {
             let ix = anchor_lang::solana_program::system_instruction::transfer(
                 &ctx.accounts.player2.key(),
                 &ctx.accounts.battle_session.key(),
-                battle.wager,
+                wager,
             );
             anchor_lang::solana_program::program::invoke(
                 &ix,
@@ -92,7 +97,7 @@ pub mod solmon_battle {
             )?;
         }
 
-        msg!("{} joined the battle!", battle.player2);
+        msg!("{} joined the battle!", ctx.accounts.battle_session.player2);
         Ok(())
     }
 

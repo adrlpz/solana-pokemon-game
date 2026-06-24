@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, MintTo, Burn, Transfer, Token, TokenAccount, SetAuthority};
-use anchor_spl::token::spl_token;
+use anchor_spl::token::spl_token::instruction::AuthorityType;
 
-declare_id!("TokeN11111111111111111111111111111111111111111");
+declare_id!("PuvPe2KwWqMz5Z5cBfqiaE5a8uPtmVNKbKJhgkNwXMq");
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ pub mod solmon_token {
                 },
                 signer_seeds,
             ),
-            spl_token::AuthorityType::MintTokens,
+            AuthorityType::MintTokens,
             None,
         )?;
 

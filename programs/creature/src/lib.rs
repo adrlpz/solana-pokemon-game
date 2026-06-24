@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount, SetAuthority};
-use anchor_spl::token::spl_token;
+use anchor_spl::token::spl_token::instruction::AuthorityType;
 
 pub mod constants;
 pub mod errors;
@@ -10,7 +10,7 @@ use constants::*;
 use errors::*;
 use state::*;
 
-declare_id!("Crea1111111111111111111111111111111111111111");
+declare_id!("5fbkSTigPB76nwTW2Pea4D8oKG5Y3LhjaNWMLCGqoyjL");
 
 #[program]
 pub mod solmon_creature {
@@ -134,7 +134,7 @@ pub mod solmon_creature {
                 cpi_accounts,
                 signer_seeds,
             ),
-            spl_token::AuthorityType::MintTokens,
+            AuthorityType::MintTokens,
             None, // revoke mint authority → frozen supply of 1
         )?;
 
@@ -325,7 +325,7 @@ pub struct InitializeRegistry<'info> {
         init,
         payer = authority,
         space = 8 + SpeciesRegistry::INIT_SPACE,
-        seeds = [b"registry", &[chunk_index]],
+        seeds = [b"registry", [chunk_index].as_ref()],
         bump,
     )]
     pub species_registry: Account<'info, SpeciesRegistry>,
