@@ -84,6 +84,37 @@ export function deriveSpeciesRegistry(): [PublicKey, number] {
 }
 
 /**
+ * Hash a move for commit-reveal
+ * Preimage: move_slot(1) + target(1) + move_power(2) + move_element(1) + is_special(1) + salt(32) = 38 bytes
+ */
+export async function hashMove(
+  moveSlot: number,
+  target: number,
+  movePower: number,
+  moveElement: number,
+  isSpecial: boolean,
+  salt: Uint8Array
+): Promise<Uint8Array> {
+  const preimage = new Uint8Array(38);
+  preimage[0] = moveSlot;
+  preimage[1] = target;
+  preimage[2] = movePower & 0xff;
+  preimage[3] = (movePower >> 8) & 0xff;
+  preimage[4] = moveElement;
+  preimage[5] = isSpecial ? 1 : 0;
+  preimage.set(salt, 6);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', preimage);
+  return new Uint8Array(hashBuffer);
+}
+
+/**
+ * Generate random 32-byte salt for commit-reveal
+ */
+export function generateSalt(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+/**
  * SOLMON Client — high-level wrapper for all 4 programs
  */
 export class SolmonClient {
@@ -182,13 +213,47 @@ export class SolmonClient {
     battlePubkey: PublicKey,
     moveSlot: number,
     target: number,
+    movePower: number,
+    moveElement: number,
+    isSpecial: boolean,
     salt: number[]
   ) {
     return this.battleProgram.methods
-      .revealMove(moveSlot, target, salt)
+      .revealMove(moveSlot, target, movePower, moveElement, isSpecial, salt)
       .accounts({
         battleSession: battlePubkey,
         player,
+      })
+      .rpc();
+  }
+
+  async joinBattle(player2: PublicKey, battlePubkey: PublicKey) {
+    return this.battleProgram.methods
+      .joinBattle()
+      .accounts({
+        battleSession: battlePubkey,
+        player2,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  async timeoutOpponent(player: PublicKey, battlePubkey: PublicKey) {
+    return this.battleProgram.methods
+      .timeoutOpponent()
+      .accounts({
+        battleSession: battlePubkey,
+        player,
+      })
+      .rpc();
+  }
+
+  async claimWinnings(winner: PublicKey, battlePubkey: PublicKey) {
+    return this.battleProgram.methods
+      .claimWinnings()
+      .accounts({
+        battleSession: battlePubkey,
+        winner,
       })
       .rpc();
   }

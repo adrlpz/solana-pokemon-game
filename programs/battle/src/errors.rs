@@ -34,4 +34,46 @@ pub enum BattleError {
 
     #[msg("You are not the winner")]
     NotWinner,
+
+    #[msg("Invalid target monster index")]
+    InvalidTarget,
+
+    #[msg("Target monster is already fainted")]
+    TargetFainted,
+
+    #[msg("Active monster is fainted — must switch")]
+    ActiveMonsterFainted,
+
+    #[msg("All monsters fainted — cannot continue")]
+    AllMonstersFainted,
+
+    #[msg("Move power data mismatch")]
+    MoveDataMismatch,
+
+    #[msg("Monster data does not match on-chain account")]
+    MonsterDataMismatch,
+
+    #[msg("Squad not fully selected")]
+    SquadIncomplete,
+
+    #[msg("Both players must reveal before resolution")]
+    RevealIncomplete,
+
+    #[msg("Max turns reached — draw")]
+    MaxTurnsReached,
+
+    #[msg("Player has forfeited (too many timeouts)")]
+    PlayerForfeited,
+
+    #[msg("Invalid monster ownership")]
+    InvalidMonsterOwner,
+
+    #[msg("Not in switch phase")]
+    NotSwitchPhase,
+
+    #[msg("Cannot switch to fainted monster")]
+    CannotSwitchToFainted,
+
+    #[msg("Overflow in damage calculation")]
+    DamageOverflow,
 }
