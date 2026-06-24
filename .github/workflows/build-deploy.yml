@@ -3,10 +3,6 @@ name: Build SOLMON Programs
 on:
   push:
     branches: [main]
-    paths:
-      - 'programs/**'
-      - 'Cargo.toml'
-      - 'Anchor.toml'
   workflow_dispatch:
 
 env:
