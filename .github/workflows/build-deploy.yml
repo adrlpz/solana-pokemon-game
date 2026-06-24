@@ -13,6 +13,14 @@ on:
         options:
           - devnet
           - skip
+      deploy_programs:
+        description: 'Programs to deploy'
+        required: true
+        default: 'creature,battle'
+        type: choice
+        options:
+          - creature,battle
+          - creature,battle,token,marketplace
 
 env:
   SOLANA_VERSION: '3.1.14'
@@ -102,11 +110,14 @@ jobs:
       - name: Deploy programs
         run: |
           TARGET="${{ github.event.inputs.deploy_target }}"
+          PROGRAMS="${{ github.event.inputs.deploy_programs }}"
           echo "═══════════════════════════════════════"
           echo "  Deploying to $TARGET"
+          echo "  Programs: $PROGRAMS"
           echo "═══════════════════════════════════════"
 
-          for prog in creature battle token marketplace; do
+          IFS=',' read -ra PROGS <<< "$PROGRAMS"
+          for prog in "${PROGS[@]}"; do
             SO="target/deploy/solmon_${prog}.so"
             KP="target/deploy/${prog}-keypair.json"
             if [[ -f "$SO" ]]; then
@@ -121,10 +132,12 @@ jobs:
 
       - name: Deployment summary
         run: |
+          PROGRAMS="${{ github.event.inputs.deploy_programs }}"
           echo "═══════════════════════════════════════"
           echo "  DEPLOYED TO ${{ github.event.inputs.deploy_target }}"
           echo "═══════════════════════════════════════"
-          for prog in creature battle token marketplace; do
+          IFS=',' read -ra PROGS <<< "$PROGRAMS"
+          for prog in "${PROGS[@]}"; do
             ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
             echo "  $prog: $ID"
           done
