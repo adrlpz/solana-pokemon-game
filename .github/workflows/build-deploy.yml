@@ -7,8 +7,7 @@ on:
 
 env:
   SOLANA_VERSION: '1.18.26'
-  ANCHOR_VERSION: '0.30.1'
-  RUST_VERSION: '1.79.0'
+  RUST_VERSION: '1.75.0'
 
 jobs:
   build:
@@ -26,10 +25,6 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Install Anchor CLI
-        run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
-
       - name: Generate program keypairs
         run: |
           mkdir -p target/deploy
@@ -43,34 +38,50 @@ jobs:
           TOKEN_ID=$(solana-keygen pubkey target/deploy/token-keypair.json)
           MARKETPLACE_ID=$(solana-keygen pubkey target/deploy/marketplace-keypair.json)
 
+          echo "CREATURE_ID=$CREATURE_ID" >> $GITHUB_ENV
+          echo "BATTLE_ID=$BATTLE_ID" >> $GITHUB_ENV
+          echo "TOKEN_ID=$TOKEN_ID" >> $GITHUB_ENV
+          echo "MARKETPLACE_ID=$MARKETPLACE_ID" >> $GITHUB_ENV
+
           echo "Program IDs:"
           echo "  Creature:    $CREATURE_ID"
           echo "  Battle:      $BATTLE_ID"
           echo "  Token:       $TOKEN_ID"
           echo "  Marketplace: $MARKETPLACE_ID"
 
+          # Update declare_id in source
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$CREATURE_ID\")/" programs/creature/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$BATTLE_ID\")/" programs/battle/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$TOKEN_ID\")/" programs/token/src/lib.rs
           sed -i "s/declare_id!(\".*\")/declare_id!(\"$MARKETPLACE_ID\")/" programs/marketplace/src/lib.rs
 
+          # Update Anchor.toml
           sed -i "s|creature = \".*\"|creature = \"$CREATURE_ID\"|g" Anchor.toml
           sed -i "s|battle = \".*\"|battle = \"$BATTLE_ID\"|g" Anchor.toml
           sed -i "s|token = \".*\"|token = \"$TOKEN_ID\"|g" Anchor.toml
           sed -i "s|marketplace = \".*\"|marketplace = \"$MARKETPLACE_ID\"|g" Anchor.toml
 
-      - name: Anchor Build
-        run: anchor build
+      - name: Build programs (cargo build-sbf)
+        run: |
+          for prog in creature battle token marketplace; do
+            echo "Building solmon_${prog}..."
+            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/
+            echo "✅ solmon_${prog} built"
+          done
 
       - name: Print program info
         run: |
           echo "═══════════════════════════════════════"
           echo "  BUILD COMPLETE"
           echo "═══════════════════════════════════════"
+          echo "  Creature:    $CREATURE_ID"
+          echo "  Battle:      $BATTLE_ID"
+          echo "  Token:       $TOKEN_ID"
+          echo "  Marketplace: $MARKETPLACE_ID"
+          echo ""
           for prog in creature battle token marketplace; do
-            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
             SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
-            echo "  $prog: $ID ($SIZE bytes)"
+            echo "  $prog: ${SIZE} bytes"
           done
 
       - name: Upload program binaries
@@ -80,11 +91,4 @@ jobs:
           path: |
             target/deploy/*.so
             target/deploy/*-keypair.json
-          retention-days: 30
-
-      - name: Upload IDL
-        uses: actions/upload-artifact@v4
-        with:
-          name: solmon-idl
-          path: target/idl/*.json
           retention-days: 30
