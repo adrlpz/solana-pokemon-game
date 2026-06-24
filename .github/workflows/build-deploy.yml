@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  SOLANA_VERSION: '1.18.26'
+  SOLANA_VERSION: '2.0.22'
 
 jobs:
   build:
