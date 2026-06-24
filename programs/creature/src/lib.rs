@@ -359,15 +359,9 @@ pub struct CatchMonster<'info> {
     )]
     pub monster_account: Box<Account<'info, MonsterAccount>>,
 
-    /// Monster NFT mint — must be a fresh keypair per monster
-    #[account(
-        init,
-        payer = authority,
-        mint::decimals = 0,
-        mint::authority = mint_authority,
-        mint::token_program = token_program,
-    )]
-    pub monster_mint: Box<Account<'info, Mint>>,
+    /// Monster NFT mint — created by client before calling this
+    #[account(mut)]
+    pub monster_mint: Signer<'info>,
 
     /// CHECK: PDA that acts as mint authority
     #[account(
@@ -376,15 +370,9 @@ pub struct CatchMonster<'info> {
     )]
     pub mint_authority: UncheckedAccount<'info>,
 
-    /// Player's token account for this monster NFT
-    #[account(
-        init,
-        payer = authority,
-        token::mint = monster_mint,
-        token::authority = authority,
-        token::token_program = token_program,
-    )]
-    pub player_token_account: Box<Account<'info, TokenAccount>>,
+    /// Player's token account for this monster NFT — created by client
+    #[account(mut)]
+    pub player_token_account: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
