@@ -51,10 +51,13 @@ function Header() {
         </div>
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <a href="/" className="hover:text-solmon-secondary transition">Home</a>
+          <a href="/explore" className="hover:text-solmon-secondary transition">Explore</a>
           <a href="/dashboard" className="hover:text-solmon-secondary transition">Collection</a>
           <a href="/battle" className="hover:text-solmon-secondary transition">Battle</a>
-          <a href="/marketplace" className="hover:text-solmon-secondary transition">Marketplace</a>
           <a href="/breed" className="hover:text-solmon-secondary transition">Breed</a>
+          <a href="/marketplace" className="hover:text-solmon-secondary transition">Market</a>
+          <a href="/staking" className="hover:text-solmon-secondary transition">Stake</a>
+          <a href="/leaderboard" className="hover:text-solmon-secondary transition">Leaderboard</a>
         </nav>
         <wallet-multi-button />
       </div>
