@@ -344,7 +344,7 @@ pub struct CatchMonster<'info> {
         seeds = [b"profile", authority.key().as_ref()],
         bump = player_profile.bump,
     )]
-    pub player_profile: Account<'info, PlayerProfile>,
+    pub player_profile: Box<Account<'info, PlayerProfile>>,
 
     #[account(
         init,
@@ -357,7 +357,7 @@ pub struct CatchMonster<'info> {
         ],
         bump,
     )]
-    pub monster_account: Account<'info, MonsterAccount>,
+    pub monster_account: Box<Account<'info, MonsterAccount>>,
 
     /// Monster NFT mint — must be a fresh keypair per monster
     #[account(
@@ -367,7 +367,7 @@ pub struct CatchMonster<'info> {
         mint::authority = mint_authority,
         mint::token_program = token_program,
     )]
-    pub monster_mint: Account<'info, Mint>,
+    pub monster_mint: Box<Account<'info, Mint>>,
 
     /// CHECK: PDA that acts as mint authority
     #[account(
@@ -384,7 +384,7 @@ pub struct CatchMonster<'info> {
         token::authority = authority,
         token::token_program = token_program,
     )]
-    pub player_token_account: Account<'info, TokenAccount>,
+    pub player_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,

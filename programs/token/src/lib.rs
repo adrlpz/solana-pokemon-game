@@ -499,7 +499,7 @@ pub struct BurnTokens<'info> {
 #[derive(Accounts)]
 pub struct StakeSolmon<'info> {
     #[account(mut, seeds = [b"token-config"], bump = token_config.bump)]
-    pub token_config: Account<'info, TokenConfig>,
+    pub token_config: Box<Account<'info, TokenConfig>>,
 
     #[account(
         init_if_needed,
@@ -508,10 +508,10 @@ pub struct StakeSolmon<'info> {
         seeds = [b"stake", user.key().as_ref()],
         bump,
     )]
-    pub stake_account: Account<'info, StakeAccount>,
+    pub stake_account: Box<Account<'info, StakeAccount>>,
 
     #[account(mut, seeds = [b"solmon-mint"], bump)]
-    pub solmon_mint: Account<'info, Mint>,
+    pub solmon_mint: Box<Account<'info, Mint>>,
 
     #[account(seeds = [b"token-authority"], bump)]
     pub token_authority: UncheckedAccount<'info>,
@@ -525,10 +525,10 @@ pub struct StakeSolmon<'info> {
         seeds = [b"stake-vault", user.key().as_ref()],
         bump,
     )]
-    pub stake_vault: Account<'info, TokenAccount>,
+    pub stake_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
