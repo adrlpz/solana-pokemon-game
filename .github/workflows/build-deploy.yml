@@ -1,9 +1,18 @@
-name: Build SOLMON Programs
+name: Build & Deploy SOLMON
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deploy target'
+        required: true
+        default: 'devnet'
+        type: choice
+        options:
+          - devnet
+          - skip
 
 env:
   SOLANA_VERSION: '3.1.14'
@@ -23,18 +32,6 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Update platform-tools
-        run: |
-          # Force platform-tools to use latest compatible Rust
-          solana --version
-          # The platform-tools Rust version is what cargo-build-sbf uses internally
-          # Update it by touching the version marker
-          PLATFORM_TOOLS="$HOME/.cache/solana"
-          if [ -d "$PLATFORM_TOOLS" ]; then
-            echo "Current platform-tools:"
-            ls "$PLATFORM_TOOLS/"
-          fi
-
       - name: Generate program keypairs + update IDs
         run: |
           mkdir -p target/deploy
@@ -53,26 +50,11 @@ jobs:
       - name: Build programs
         run: |
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-
-          # cargo-build-sbf uses platform-tools Rust internally, not the system Rust
-          # The lockfile must be parseable by platform-tools Cargo
-          # Generate lockfile with system Rust and let cargo-build-sbf resolve
           for prog in creature battle token marketplace; do
             echo "═══ Building solmon_${prog} ═══"
-            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/ 2>&1
+            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/
             SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
             echo "✅ solmon_${prog}: ${SIZE} bytes"
-          done
-
-      - name: Summary
-        run: |
-          echo "═══════════════════════════════════════"
-          echo "  BUILD COMPLETE"
-          echo "═══════════════════════════════════════"
-          for prog in creature battle token marketplace; do
-            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
-            SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
-            echo "  $prog: $ID ($SIZE bytes)"
           done
 
       - name: Upload artifacts
@@ -83,3 +65,67 @@ jobs:
             target/deploy/*.so
             target/deploy/*-keypair.json
           retention-days: 30
+
+  deploy:
+    needs: build
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy_target != 'skip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event.inputs.deploy_target }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: solmon-programs
+          path: target/deploy/
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Configure deployer wallet
+        run: |
+          echo "${{ secrets.DEPLOYER_KEYPAIR }}" > /tmp/deployer.json
+          solana config set --keypair /tmp/deployer.json
+          if [ "${{ github.event.inputs.deploy_target }}" = "devnet" ]; then
+            solana config set --url devnet
+            echo "Requesting devnet SOL..."
+            solana airdrop 4 || solana airdrop 2 || solana airdrop 1 || true
+          else
+            solana config set --url mainnet-beta
+          fi
+          solana balance
+
+      - name: Deploy programs
+        run: |
+          TARGET="${{ github.event.inputs.deploy_target }}"
+          echo "═══════════════════════════════════════"
+          echo "  Deploying to $TARGET"
+          echo "═══════════════════════════════════════"
+
+          for prog in creature battle token marketplace; do
+            SO="target/deploy/solmon_${prog}.so"
+            KP="target/deploy/${prog}-keypair.json"
+            if [[ -f "$SO" ]]; then
+              echo "📤 Deploying $prog..."
+              solana program deploy "$SO" \
+                --program-id "$KP" \
+                --commitment confirmed \
+                --max-signatures 600
+              ID=$(solana-keygen pubkey "$KP")
+              echo "✅ $prog deployed: $ID"
+            fi
+          done
+
+      - name: Deployment summary
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  DEPLOYED TO ${{ github.event.inputs.deploy_target }}"
+          echo "═══════════════════════════════════════"
+          for prog in creature battle token marketplace; do
+            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
+            echo "  $prog: $ID"
+          done
