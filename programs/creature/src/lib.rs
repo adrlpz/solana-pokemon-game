@@ -389,9 +389,9 @@ pub struct CatchMonster<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    pub token_program: Program<'info, Token>,
+    /// CHECK: SPL Token program
+    pub token_program: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
