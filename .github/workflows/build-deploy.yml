@@ -7,25 +7,25 @@ on:
 
 env:
   SOLANA_VERSION: '1.18.26'
-  RUST_VERSION: '1.79.0'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust 1.79.0
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: '1.79.0'
 
       - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Generate program keypairs
+      - name: Generate program keypairs + update IDs
         run: |
           mkdir -p target/deploy
           solana-keygen new --no-bip39-passphrase -o target/deploy/creature-keypair.json
@@ -33,58 +33,41 @@ jobs:
           solana-keygen new --no-bip39-passphrase -o target/deploy/token-keypair.json
           solana-keygen new --no-bip39-passphrase -o target/deploy/marketplace-keypair.json
 
-          CREATURE_ID=$(solana-keygen pubkey target/deploy/creature-keypair.json)
-          BATTLE_ID=$(solana-keygen pubkey target/deploy/battle-keypair.json)
-          TOKEN_ID=$(solana-keygen pubkey target/deploy/token-keypair.json)
-          MARKETPLACE_ID=$(solana-keygen pubkey target/deploy/marketplace-keypair.json)
-
-          echo "CREATURE_ID=$CREATURE_ID" >> $GITHUB_ENV
-          echo "BATTLE_ID=$BATTLE_ID" >> $GITHUB_ENV
-          echo "TOKEN_ID=$TOKEN_ID" >> $GITHUB_ENV
-          echo "MARKETPLACE_ID=$MARKETPLACE_ID" >> $GITHUB_ENV
-
-          echo "Program IDs:"
-          echo "  Creature:    $CREATURE_ID"
-          echo "  Battle:      $BATTLE_ID"
-          echo "  Token:       $TOKEN_ID"
-          echo "  Marketplace: $MARKETPLACE_ID"
-
-          # Update declare_id in source
-          sed -i "s/declare_id!(\".*\")/declare_id!(\"$CREATURE_ID\")/" programs/creature/src/lib.rs
-          sed -i "s/declare_id!(\".*\")/declare_id!(\"$BATTLE_ID\")/" programs/battle/src/lib.rs
-          sed -i "s/declare_id!(\".*\")/declare_id!(\"$TOKEN_ID\")/" programs/token/src/lib.rs
-          sed -i "s/declare_id!(\".*\")/declare_id!(\"$MARKETPLACE_ID\")/" programs/marketplace/src/lib.rs
-
-          # Update Anchor.toml
-          sed -i "s|creature = \".*\"|creature = \"$CREATURE_ID\"|g" Anchor.toml
-          sed -i "s|battle = \".*\"|battle = \"$BATTLE_ID\"|g" Anchor.toml
-          sed -i "s|token = \".*\"|token = \"$TOKEN_ID\"|g" Anchor.toml
-          sed -i "s|marketplace = \".*\"|marketplace = \"$MARKETPLACE_ID\"|g" Anchor.toml
-
-      - name: Build programs (cargo build-sbf)
-        run: |
           for prog in creature battle token marketplace; do
-            echo "Building solmon_${prog}..."
-            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/
-            echo "✅ solmon_${prog} built"
+            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
+            echo "  $prog: $ID"
+            sed -i "s/declare_id!(\".*\")/declare_id!(\"$ID\")/" programs/${prog}/src/lib.rs
+            sed -i "s|${prog} = \".*\"|${prog} = \"$ID\"|g" Anchor.toml
           done
 
-      - name: Print program info
+      - name: Generate lockfile (Rust 1.79 = v3 format)
+        run: |
+          rm -f Cargo.lock
+          cargo generate-lockfile
+          head -3 Cargo.lock
+
+      - name: Build all programs (cargo build-sbf)
+        run: |
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          for prog in creature battle token marketplace; do
+            echo "═══ Building solmon_${prog} ═══"
+            cargo build-sbf --manifest-path programs/${prog}/Cargo.toml --sbf-out-dir target/deploy/
+            SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
+            echo "✅ solmon_${prog}: ${SIZE} bytes"
+          done
+
+      - name: Summary
         run: |
           echo "═══════════════════════════════════════"
           echo "  BUILD COMPLETE"
           echo "═══════════════════════════════════════"
-          echo "  Creature:    $CREATURE_ID"
-          echo "  Battle:      $BATTLE_ID"
-          echo "  Token:       $TOKEN_ID"
-          echo "  Marketplace: $MARKETPLACE_ID"
-          echo ""
           for prog in creature battle token marketplace; do
+            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
             SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
-            echo "  $prog: ${SIZE} bytes"
+            echo "  $prog: $ID ($SIZE bytes)"
           done
 
-      - name: Upload program binaries
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: solmon-programs
