@@ -1,4 +1,4 @@
-name: Build & Deploy SOLMON Programs
+name: Build SOLMON Programs
 
 on:
   push:
@@ -8,14 +8,8 @@ on:
       - 'Cargo.toml'
       - 'Anchor.toml'
   workflow_dispatch:
-    inputs:
-      deploy_target:
-        description: 'Deploy target (devnet/mainnet)'
-        required: false
-        default: 'devnet'
 
 env:
-  ANCHOR_VERSION: '0.30.1'
   SOLANA_VERSION: '1.18.26'
 
 jobs:
@@ -29,64 +23,68 @@ jobs:
         with:
           version: ${{ env.SOLANA_VERSION }}
 
-      - name: Setup Anchor CLI
-        uses: Tsuzat/Anchor@v2.0.0
-        with:
-          anchor-version: ${{ env.ANCHOR_VERSION }}
-
-      - name: Generate keypair
+      - name: Install Anchor CLI
         run: |
-          solana-keygen new --no-bip39-passphrase -o target/deploy/creature-keypair.json || true
-          solana-keygen new --no-bip39-passphrase -o target/deploy/battle-keypair.json || true
-          solana-keygen new --no-bip39-passphrase -o target/deploy/token-keypair.json || true
-          solana-keygen new --no-bip39-passphrase -o target/deploy/marketplace-keypair.json || true
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli --locked
+
+      - name: Generate program keypairs
+        run: |
+          mkdir -p target/deploy
+          solana-keygen new --no-bip39-passphrase -o target/deploy/creature-keypair.json
+          solana-keygen new --no-bip39-passphrase -o target/deploy/battle-keypair.json
+          solana-keygen new --no-bip39-passphrase -o target/deploy/token-keypair.json
+          solana-keygen new --no-bip39-passphrase -o target/deploy/marketplace-keypair.json
+
+          # Update Anchor.toml with generated program IDs
+          CREATURE_ID=$(solana-keygen pubkey target/deploy/creature-keypair.json)
+          BATTLE_ID=$(solana-keygen pubkey target/deploy/battle-keypair.json)
+          TOKEN_ID=$(solana-keygen pubkey target/deploy/token-keypair.json)
+          MARKETPLACE_ID=$(solana-keygen pubkey target/deploy/marketplace-keypair.json)
+
+          echo "Program IDs:"
+          echo "  Creature:    $CREATURE_ID"
+          echo "  Battle:      $BATTLE_ID"
+          echo "  Token:       $TOKEN_ID"
+          echo "  Marketplace: $MARKETPLACE_ID"
+
+          # Update declare_id in source
+          sed -i "s/declare_id!(\".*\")/declare_id!(\"$CREATURE_ID\")/" programs/creature/src/lib.rs
+          sed -i "s/declare_id!(\".*\")/declare_id!(\"$BATTLE_ID\")/" programs/battle/src/lib.rs
+          sed -i "s/declare_id!(\".*\")/declare_id!(\"$TOKEN_ID\")/" programs/token/src/lib.rs
+          sed -i "s/declare_id!(\".*\")/declare_id!(\"$MARKETPLACE_ID\")/" programs/marketplace/src/lib.rs
+
+          # Update Anchor.toml
+          sed -i "s|creature = \".*\"|creature = \"$CREATURE_ID\"|g" Anchor.toml
+          sed -i "s|battle = \".*\"|battle = \"$BATTLE_ID\"|g" Anchor.toml
+          sed -i "s|token = \".*\"|token = \"$TOKEN_ID\"|g" Anchor.toml
+          sed -i "s|marketplace = \".*\"|marketplace = \"$MARKETPLACE_ID\"|g" Anchor.toml
 
       - name: Anchor Build
-        run: anchor build --no-idl
+        run: anchor build
 
-      - name: Upload artifacts
+      - name: Print program info
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  BUILD COMPLETE"
+          echo "═══════════════════════════════════════"
+          for prog in creature battle token marketplace; do
+            ID=$(solana-keygen pubkey target/deploy/${prog}-keypair.json)
+            SIZE=$(stat -c%s target/deploy/solmon_${prog}.so 2>/dev/null || echo "0")
+            echo "  $prog: $ID ($SIZE bytes)"
+          done
+
+      - name: Upload program binaries
         uses: actions/upload-artifact@v4
         with:
           name: solmon-programs
-          path: target/deploy/*.so
+          path: |
+            target/deploy/*.so
+            target/deploy/*-keypair.json
           retention-days: 30
 
-  deploy-devnet:
-    needs: build
-    if: github.event.inputs.deploy_target == 'devnet' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
-    runs-on: ubuntu-latest
-    environment: devnet
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - name: Upload IDL
+        uses: actions/upload-artifact@v4
         with:
-          name: solmon-programs
-          path: target/deploy/
-
-      - name: Setup Solana
-        uses: solana-labs/actions/setup-solana@v1
-        with:
-          version: ${{ env.SOLANA_VERSION }}
-
-      - name: Configure Solana for devnet
-        run: |
-          solana config set --url devnet
-          echo "${{ secrets.DEPLOYER_KEYPAIR }}" > /tmp/deployer.json
-          solana config set --keypair /tmp/deployer.json
-
-      - name: Airdrop SOL
-        run: solana airdrop 5 || true
-
-      - name: Deploy programs
-        run: |
-          for prog in creature battle token marketplace; do
-            SO="target/deploy/solmon_${prog}.so"
-            KP="target/deploy/${prog}-keypair.json"
-            if [[ -f "$SO" ]]; then
-              echo "Deploying $prog..."
-              solana program deploy "$SO" --program-id "$KP" --url devnet --commitment confirmed
-              echo "✅ $prog deployed"
-            fi
-          done
+          name: solmon-idl
+          path: target/idl/*.json
+          retention-days: 30
