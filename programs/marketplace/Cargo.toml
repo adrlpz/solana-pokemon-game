@@ -1,0 +1,21 @@
+[package]
+name = "solmon-marketplace"
+version = "0.1.0"
+description = "SOLMON Marketplace Program — monster & item trading"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "solmon_marketplace"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }
+solmon-creature = { path = "../creature", features = ["cpi"] }

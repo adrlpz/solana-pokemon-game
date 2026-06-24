@@ -1,0 +1,17 @@
+{
+  "name": "solana-pokemon-game",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SOLMON — Solana Monster Battle",
+  "workspaces": [
+    "app",
+    "sdk"
+  ],
+  "scripts": {
+    "lint": "prettier --check '*/**/*.{ts,tsx,json}'",
+    "format": "prettier --write '*/**/*.{ts,tsx,json}'"
+  },
+  "devDependencies": {
+    "prettier": "^3.0"
+  }
+}

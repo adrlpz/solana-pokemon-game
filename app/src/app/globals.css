@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&family=Press+Start+2P&display=swap');
+
+:root {
+  --fire: #F08030;
+  --water: #6890F0;
+  --earth: #8B6914;
+  --electric: #F8D030;
+  --shadow: #705848;
+  --light: #F8F8F8;
+  --solmon-primary: #6C3CE1;
+  --solmon-secondary: #14F195;
+  --solmon-dark: #0F0F23;
+}
+
+body {
+  @apply bg-solmon-dark text-white font-game;
+  min-height: 100vh;
+}
+
+/* Pixel font for game UI elements */
+.font-pixel {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Element type badges */
+.badge-fire { @apply bg-fire/20 text-fire border border-fire/40; }
+.badge-water { @apply bg-water/20 text-water border border-water/40; }
+.badge-earth { @apply bg-earth/20 text-earth border border-earth/40; }
+.badge-electric { @apply bg-electric/20 text-electric border border-electric/40; }
+.badge-shadow { @apply bg-shadow/20 text-shadow border border-shadow/40; }
+.badge-light { @apply bg-light/20 text-solmon-dark border border-light/40; }
+
+/* Monster card hover */
+.monster-card {
+  @apply transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-solmon-primary/20;
+}
+
+/* Battle canvas container */
+.battle-canvas {
+  @apply w-full aspect-video bg-black/50 rounded-xl border border-solmon-primary/30;
+}
+
+/* Gradient text */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-solmon-primary to-solmon-secondary;
+}

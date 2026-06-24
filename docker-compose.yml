@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  # Solana test validator (for local development)
+  solana:
+    image: solanalabs/solana:v1.18.17
+    ports:
+      - "8899:8899"
+      - "8900:8900"
+    command: solana-test-validator --reset
+    volumes:
+      - solana-data:/root/.solana
+
+  # PostgreSQL for off-chain data
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: solmon
+      POSTGRES_PASSWORD: solmon_dev
+      POSTGRES_DB: solmon
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # Redis for caching/queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  # API server
+  api:
+    build: ./api
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgres://solmon:solmon_dev@postgres:5432/solmon
+      REDIS_URL: redis://redis:6379
+      SOLANA_RPC_URL: http://solana:8899
+    depends_on:
+      - postgres
+      - redis
+      - solana
+    volumes:
+      - ./api/src:/app/src
+
+volumes:
+  solana-data:
+  postgres-data:
+  redis-data:
