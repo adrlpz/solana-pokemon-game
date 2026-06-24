@@ -1,17 +1,27 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Transfer, Token, TokenAccount};
+use anchor_spl::token::{self, Transfer, Token, TokenAccount, CloseAccount, Mint};
 
 declare_id!("Marke71111111111111111111111111111111111111111");
+
+// ─── Constants ──────────────────────────────────────────────
 
 /// Marketplace fee: 5%
 pub const FEE_BPS: u64 = 500;
 pub const BPS_DENOMINATOR: u64 = 10000;
 
+/// Listing fee in $SOLTREAT: 10 tokens (burned)
+pub const LISTING_FEE_SOLTREAT: u64 = 10_000_000_000; // 10 * 10^9
+
+/// Offer expiry: 7 days
+pub const OFFER_EXPIRY: i64 = 604_800;
+
 #[program]
 pub mod solmon_marketplace {
     use super::*;
 
-    /// List a monster for sale
+    // ─── List Monster ───────────────────────────────────────
+
+    /// List a monster NFT for sale — transfers NFT to escrow vault
     pub fn list_monster(
         ctx: Context<ListMonster>,
         price: u64,
@@ -20,7 +30,7 @@ pub mod solmon_marketplace {
 
         let listing = &mut ctx.accounts.listing;
         listing.seller = ctx.accounts.seller.key();
-        listing.monster = ctx.accounts.monster.key();
+        listing.monster_mint = ctx.accounts.monster_mint.key();
         listing.item_mint = Pubkey::default();
         listing.price = price;
         listing.amount = 1;
@@ -29,11 +39,26 @@ pub mod solmon_marketplace {
         listing.created_at = Clock::get()?.unix_timestamp;
         listing.bump = ctx.bumps.listing;
 
-        msg!("Monster listed for {} lamports", price);
+        // Transfer NFT from seller to escrow vault
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.seller_token_account.to_account_info(),
+                    to: ctx.accounts.escrow_vault.to_account_info(),
+                    authority: ctx.accounts.seller.to_account_info(),
+                },
+            ),
+            1, // NFT = 1 token
+        )?;
+
+        msg!("Monster listed for {} lamports | NFT escrowed", price);
         Ok(())
     }
 
-    /// List fungible items for sale (potions, evolution stones)
+    // ─── List Item ──────────────────────────────────────────
+
+    /// List fungible items — transfers tokens to escrow
     pub fn list_item(
         ctx: Context<ListItem>,
         price: u64,
@@ -42,9 +67,22 @@ pub mod solmon_marketplace {
         require!(price > 0, MarketplaceError::InvalidPrice);
         require!(amount > 0, MarketplaceError::InvalidAmount);
 
+        // Transfer items to escrow
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.seller_token_account.to_account_info(),
+                    to: ctx.accounts.escrow_vault.to_account_info(),
+                    authority: ctx.accounts.seller.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
         let listing = &mut ctx.accounts.listing;
         listing.seller = ctx.accounts.seller.key();
-        listing.monster = Pubkey::default();
+        listing.monster_mint = Pubkey::default();
         listing.item_mint = ctx.accounts.item_mint.key();
         listing.price = price;
         listing.amount = amount;
@@ -53,11 +91,13 @@ pub mod solmon_marketplace {
         listing.created_at = Clock::get()?.unix_timestamp;
         listing.bump = ctx.bumps.listing;
 
-        msg!("Listed {} items for {} lamports total", amount, price);
+        msg!("Listed {} items for {} lamports", amount, price);
         Ok(())
     }
 
-    /// Buy a listed monster
+    // ─── Buy Monster ────────────────────────────────────────
+
+    /// Buy a listed monster — SOL to seller, NFT to buyer
     pub fn buy_monster(ctx: Context<BuyMonster>) -> Result<()> {
         let listing = &ctx.accounts.listing;
         require!(listing.is_active, MarketplaceError::ListingNotActive);
@@ -75,10 +115,7 @@ pub mod solmon_marketplace {
         );
         anchor_lang::solana_program::program::invoke(
             &ix,
-            &[
-                ctx.accounts.buyer.to_account_info(),
-                ctx.accounts.seller.to_account_info(),
-            ],
+            &[ctx.accounts.buyer.to_account_info(), ctx.accounts.seller.to_account_info()],
         )?;
 
         // Transfer fee to treasury
@@ -90,14 +127,44 @@ pub mod solmon_marketplace {
             );
             anchor_lang::solana_program::program::invoke(
                 &fee_ix,
-                &[
-                    ctx.accounts.buyer.to_account_info(),
-                    ctx.accounts.treasury.to_account_info(),
-                ],
+                &[ctx.accounts.buyer.to_account_info(), ctx.accounts.treasury.to_account_info()],
             )?;
         }
 
-        // Close listing
+        // Transfer NFT from escrow → buyer
+        let seeds = &[
+            b"marketplace-authority".as_ref(),
+            &[ctx.bumps.marketplace_authority],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.escrow_vault.to_account_info(),
+                    to: ctx.accounts.buyer_token_account.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            1,
+        )?;
+
+        // Close escrow vault, rent back to seller
+        token::close_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                CloseAccount {
+                    account: ctx.accounts.escrow_vault.to_account_info(),
+                    destination: ctx.accounts.seller.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+        )?;
+
+        // Mark listing inactive
         let listing = &mut ctx.accounts.listing;
         listing.is_active = false;
 
@@ -105,7 +172,9 @@ pub mod solmon_marketplace {
         Ok(())
     }
 
-    /// Buy listed items
+    // ─── Buy Item ───────────────────────────────────────────
+
+    /// Buy items from listing
     pub fn buy_item(
         ctx: Context<BuyItem>,
         quantity: u64,
@@ -115,12 +184,11 @@ pub mod solmon_marketplace {
         require!(!listing.is_monster, MarketplaceError::NotItemListing);
         require!(quantity > 0 && quantity <= listing.amount, MarketplaceError::InvalidAmount);
 
-        // Pro-rata price
         let total_price = listing.price * quantity / listing.amount;
         let fee = total_price * FEE_BPS / BPS_DENOMINATOR;
         let seller_receives = total_price - fee;
 
-        // Transfer SOL: buyer → seller
+        // SOL: buyer → seller
         let ix = anchor_lang::solana_program::system_instruction::transfer(
             &ctx.accounts.buyer.key(),
             &ctx.accounts.seller.key(),
@@ -128,13 +196,10 @@ pub mod solmon_marketplace {
         );
         anchor_lang::solana_program::program::invoke(
             &ix,
-            &[
-                ctx.accounts.buyer.to_account_info(),
-                ctx.accounts.seller.to_account_info(),
-            ],
+            &[ctx.accounts.buyer.to_account_info(), ctx.accounts.seller.to_account_info()],
         )?;
 
-        // Transfer SPL tokens: seller → buyer
+        // SPL tokens: escrow → buyer
         let seeds = &[b"marketplace-authority".as_ref(), &[ctx.bumps.marketplace_authority]];
         let signer_seeds = &[&seeds[..]];
 
@@ -142,7 +207,7 @@ pub mod solmon_marketplace {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from: ctx.accounts.seller_token_account.to_account_info(),
+                    from: ctx.accounts.escrow_vault.to_account_info(),
                     to: ctx.accounts.buyer_token_account.to_account_info(),
                     authority: ctx.accounts.marketplace_authority.to_account_info(),
                 },
@@ -156,23 +221,93 @@ pub mod solmon_marketplace {
         listing.amount -= quantity;
         if listing.amount == 0 {
             listing.is_active = false;
+            // Close escrow vault
+            token::close_account(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    CloseAccount {
+                        account: ctx.accounts.escrow_vault.to_account_info(),
+                        destination: ctx.accounts.seller.to_account_info(),
+                        authority: ctx.accounts.marketplace_authority.to_account_info(),
+                    },
+                    signer_seeds,
+                ),
+            )?;
         }
 
         msg!("Bought {} items for {} lamports", quantity, total_price);
         Ok(())
     }
 
-    /// Cancel a listing (seller only)
-    pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
-        let listing = &mut ctx.accounts.listing;
-        require!(listing.is_active, MarketplaceError::ListingNotActive);
+    // ─── Cancel Listing ─────────────────────────────────────
 
+    /// Cancel listing — returns escrowed NFT/items to seller
+    pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
+        let listing = &ctx.accounts.listing;
+        require!(listing.is_active, MarketplaceError::ListingNotActive);
+        require!(listing.seller == ctx.accounts.seller.key(), MarketplaceError::NotSeller);
+
+        let seeds = &[b"marketplace-authority".as_ref(), &[ctx.bumps.marketplace_authority]];
+        let signer_seeds = &[&seeds[..]];
+
+        // Return escrowed tokens to seller
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.escrow_vault.to_account_info(),
+                    to: ctx.accounts.seller_token_account.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            listing.amount,
+        )?;
+
+        // Close escrow vault
+        token::close_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                CloseAccount {
+                    account: ctx.accounts.escrow_vault.to_account_info(),
+                    destination: ctx.accounts.seller.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+        )?;
+
+        // Mark inactive
+        let listing = &mut ctx.accounts.listing;
         listing.is_active = false;
-        msg!("Listing cancelled");
+
+        msg!("Listing cancelled — NFT/items returned to seller");
         Ok(())
     }
 
-    /// Make an offer on a monster
+    // ─── Update Price ───────────────────────────────────────
+
+    /// Update listing price (seller only)
+    pub fn update_price(
+        ctx: Context<UpdatePrice>,
+        new_price: u64,
+    ) -> Result<()> {
+        require!(new_price > 0, MarketplaceError::InvalidPrice);
+
+        let listing = &mut ctx.accounts.listing;
+        require!(listing.is_active, MarketplaceError::ListingNotActive);
+        require!(listing.seller == ctx.accounts.seller.key(), MarketplaceError::NotSeller);
+
+        let old_price = listing.price;
+        listing.price = new_price;
+
+        msg!("Price updated: {} → {} lamports", old_price, new_price);
+        Ok(())
+    }
+
+    // ─── Make Offer ─────────────────────────────────────────
+
+    /// Make an offer on a listing — SOL escrowed in offer PDA
     pub fn make_offer(
         ctx: Context<MakeOffer>,
         amount: u64,
@@ -185,9 +320,10 @@ pub mod solmon_marketplace {
         offer.amount = amount;
         offer.is_active = true;
         offer.created_at = Clock::get()?.unix_timestamp;
+        offer.expires_at = Clock::get()?.unix_timestamp + OFFER_EXPIRY;
         offer.bump = ctx.bumps.offer;
 
-        // Escrow the offer amount
+        // Escrow SOL
         let ix = anchor_lang::solana_program::system_instruction::transfer(
             &ctx.accounts.buyer.key(),
             &ctx.accounts.offer.key(),
@@ -195,34 +331,99 @@ pub mod solmon_marketplace {
         );
         anchor_lang::solana_program::program::invoke(
             &ix,
-            &[
-                ctx.accounts.buyer.to_account_info(),
-                ctx.accounts.offer.to_account_info(),
-            ],
+            &[ctx.accounts.buyer.to_account_info(), ctx.accounts.offer.to_account_info()],
         )?;
 
-        msg!("Offer of {} lamports placed", amount);
+        msg!("Offer placed: {} lamports (expires in 7 days)", amount);
         Ok(())
     }
 
-    /// Accept an offer (seller only)
+    // ─── Accept Offer ───────────────────────────────────────
+
+    /// Accept offer — seller gets SOL, buyer gets NFT
     pub fn accept_offer(ctx: Context<AcceptOffer>) -> Result<()> {
         let offer = &ctx.accounts.offer;
         require!(offer.is_active, MarketplaceError::OfferNotActive);
+        require!(
+            Clock::get()?.unix_timestamp < offer.expires_at,
+            MarketplaceError::OfferExpired
+        );
+
+        let listing = &ctx.accounts.listing;
+        require!(listing.is_active, MarketplaceError::ListingNotActive);
 
         let amount = offer.amount;
         let fee = amount * FEE_BPS / BPS_DENOMINATOR;
         let seller_receives = amount - fee;
 
-        // Transfer from escrow to seller
+        // Transfer SOL from escrow to seller
         **ctx.accounts.offer.to_account_info().try_borrow_mut_lamports()? -= seller_receives;
         **ctx.accounts.seller.to_account_info().try_borrow_mut_lamports()? += seller_receives;
 
-        // Close offer
+        // Transfer fee to treasury
+        if fee > 0 {
+            **ctx.accounts.offer.to_account_info().try_borrow_mut_lamports()? -= fee;
+            **ctx.accounts.treasury.to_account_info().try_borrow_mut_lamports()? += fee;
+        }
+
+        // Transfer NFT from escrow to buyer
+        let seeds = &[b"marketplace-authority".as_ref(), &[ctx.bumps.marketplace_authority]];
+        let signer_seeds = &[&seeds[..]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.escrow_vault.to_account_info(),
+                    to: ctx.accounts.buyer_token_account.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            1,
+        )?;
+
+        // Close escrow vault
+        token::close_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                CloseAccount {
+                    account: ctx.accounts.escrow_vault.to_account_info(),
+                    destination: ctx.accounts.seller.to_account_info(),
+                    authority: ctx.accounts.marketplace_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+        )?;
+
+        // Mark listing + offer inactive
+        let listing = &mut ctx.accounts.listing;
+        listing.is_active = false;
+
         let offer = &mut ctx.accounts.offer;
         offer.is_active = false;
 
-        msg!("Offer accepted for {} lamports", amount);
+        msg!("Offer accepted for {} lamports (fee: {})", amount, fee);
+        Ok(())
+    }
+
+    // ─── Cancel Offer ───────────────────────────────────────
+
+    /// Cancel offer — refund escrowed SOL to buyer
+    pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
+        let offer = &ctx.accounts.offer;
+        require!(offer.is_active, MarketplaceError::OfferNotActive);
+        require!(offer.buyer == ctx.accounts.buyer.key(), MarketplaceError::NotBuyer);
+
+        let refund = offer.amount;
+
+        **ctx.accounts.offer.to_account_info().try_borrow_mut_lamports()? -= refund;
+        **ctx.accounts.buyer.to_account_info().try_borrow_mut_lamports()? += refund;
+
+        let offer = &mut ctx.accounts.offer;
+        offer.is_active = false;
+
+        msg!("Offer cancelled — {} lamports refunded", refund);
         Ok(())
     }
 }
@@ -235,18 +436,41 @@ pub struct ListMonster<'info> {
         init,
         payer = seller,
         space = 8 + Listing::INIT_SPACE,
-        seeds = [b"listing", monster.key().as_ref()],
+        seeds = [b"listing", monster_mint.key().as_ref()],
         bump,
     )]
     pub listing: Account<'info, Listing>,
 
-    /// CHECK: Monster account PDA
-    pub monster: AccountInfo<'info>,
+    pub monster_mint: Account<'info, Mint>,
+
+    #[account(
+        mut,
+        constraint = seller_token_account.amount == 1 @ MarketplaceError::NotMonsterOwner,
+        constraint = seller_token_account.mint == monster_mint.key() @ MarketplaceError::MintMismatch,
+    )]
+    pub seller_token_account: Account<'info, TokenAccount>,
+
+    /// Escrow vault for NFT
+    #[account(
+        init,
+        payer = seller,
+        token::mint = monster_mint,
+        token::authority = marketplace_authority,
+        seeds = [b"escrow", monster_mint.key().as_ref()],
+        bump,
+    )]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
+    /// CHECK: PDA marketplace authority
+    #[account(seeds = [b"marketplace-authority"], bump)]
+    pub marketplace_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub seller: Signer<'info>,
 
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
@@ -260,55 +484,90 @@ pub struct ListItem<'info> {
     )]
     pub listing: Account<'info, Listing>,
 
-    pub item_mint: Account<'info, anchor_spl::token::Mint>,
-
-    #[account(mut)]
-    pub seller: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct BuyMonster<'info> {
-    #[account(
-        mut,
-        constraint = listing.is_active @ MarketplaceError::ListingNotActive,
-    )]
-    pub listing: Account<'info, Listing>,
-
-    /// CHECK: Seller wallet
-    #[account(mut, constraint = seller.key() == listing.seller)]
-    pub seller: AccountInfo<'info>,
-
-    /// CHECK: Treasury wallet for fees
-    #[account(mut)]
-    pub treasury: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub buyer: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct BuyItem<'info> {
-    #[account(
-        mut,
-        constraint = listing.is_active @ MarketplaceError::ListingNotActive,
-    )]
-    pub listing: Account<'info, Listing>,
-
-    /// CHECK: Seller wallet
-    #[account(mut, constraint = seller.key() == listing.seller)]
-    pub seller: AccountInfo<'info>,
+    pub item_mint: Account<'info, Mint>,
 
     #[account(mut)]
     pub seller_token_account: Account<'info, TokenAccount>,
 
+    /// Escrow vault for items
+    #[account(
+        init,
+        payer = seller,
+        token::mint = item_mint,
+        token::authority = marketplace_authority,
+        seeds = [b"escrow", item_mint.key().as_ref(), seller.key().as_ref()],
+        bump,
+    )]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
+    /// CHECK: PDA marketplace authority
+    #[account(seeds = [b"marketplace-authority"], bump)]
+    pub marketplace_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub seller: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct BuyMonster<'info> {
+    #[account(mut, constraint = listing.is_active @ MarketplaceError::ListingNotActive)]
+    pub listing: Account<'info, Listing>,
+
+    #[account(mut, constraint = seller.key() == listing.seller @ MarketplaceError::NotSeller)]
+    /// CHECK: seller wallet
+    pub seller: AccountInfo<'info>,
+
+    /// CHECK: treasury for fees
+    #[account(mut)]
+    pub treasury: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"escrow", listing.monster_mint.as_ref()],
+        bump,
+    )]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        token::mint = monster_mint,
+        token::authority = buyer,
+    )]
+    pub buyer_token_account: Account<'info, TokenAccount>,
+
+    pub monster_mint: Account<'info, Mint>,
+
+    #[account(seeds = [b"marketplace-authority"], bump)]
+    pub marketplace_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct BuyItem<'info> {
+    #[account(mut, constraint = listing.is_active @ MarketplaceError::ListingNotActive)]
+    pub listing: Account<'info, Listing>,
+
+    #[account(mut, constraint = seller.key() == listing.seller)]
+    /// CHECK: seller
+    pub seller: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
     #[account(mut)]
     pub buyer_token_account: Account<'info, TokenAccount>,
 
-    /// CHECK: PDA authority for token transfers
     #[account(seeds = [b"marketplace-authority"], bump)]
     pub marketplace_authority: UncheckedAccount<'info>,
 
@@ -323,8 +582,28 @@ pub struct BuyItem<'info> {
 pub struct CancelListing<'info> {
     #[account(
         mut,
+        constraint = listing.is_active @ MarketplaceError::ListingNotActive,
         constraint = listing.seller == seller.key() @ MarketplaceError::NotSeller,
     )]
+    pub listing: Account<'info, Listing>,
+
+    /// Escrow vault
+    #[account(mut)]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub seller_token_account: Account<'info, TokenAccount>,
+
+    #[account(seeds = [b"marketplace-authority"], bump)]
+    pub marketplace_authority: UncheckedAccount<'info>,
+
+    pub seller: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct UpdatePrice<'info> {
+    #[account(mut)]
     pub listing: Account<'info, Listing>,
 
     pub seller: Signer<'info>,
@@ -333,6 +612,11 @@ pub struct CancelListing<'info> {
 #[derive(Accounts)]
 pub struct MakeOffer<'info> {
     #[account(
+        constraint = listing.is_active @ MarketplaceError::ListingNotActive,
+    )]
+    pub listing: Account<'info, Listing>,
+
+    #[account(
         init,
         payer = buyer,
         space = 8 + Offer::INIT_SPACE,
@@ -340,8 +624,6 @@ pub struct MakeOffer<'info> {
         bump,
     )]
     pub offer: Account<'info, Offer>,
-
-    pub listing: Account<'info, Listing>,
 
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -358,17 +640,56 @@ pub struct AcceptOffer<'info> {
     pub offer: Account<'info, Offer>,
 
     #[account(
+        mut,
+        constraint = listing.is_active @ MarketplaceError::ListingNotActive,
         constraint = listing.key() == offer.listing @ MarketplaceError::ListingMismatch,
     )]
     pub listing: Account<'info, Listing>,
 
+    /// Escrow vault for the NFT
+    #[account(mut)]
+    pub escrow_vault: Account<'info, TokenAccount>,
+
     #[account(
-        mut,
-        constraint = seller.key() == listing.seller @ MarketplaceError::NotSeller,
+        init_if_needed,
+        payer = seller,
+        token::mint = monster_mint,
+        token::authority = buyer,
     )]
+    pub buyer_token_account: Account<'info, TokenAccount>,
+
+    pub monster_mint: Account<'info, Mint>,
+
+    #[account(mut, constraint = seller.key() == listing.seller @ MarketplaceError::NotSeller)]
     pub seller: Signer<'info>,
 
+    /// CHECK: buyer wallet (offer.buyer)
+    #[account(mut, constraint = buyer.key() == offer.buyer @ MarketplaceError::NotBuyer)]
+    pub buyer: AccountInfo<'info>,
+
+    /// CHECK: treasury for fees
+    #[account(mut)]
+    pub treasury: AccountInfo<'info>,
+
+    #[account(seeds = [b"marketplace-authority"], bump)]
+    pub marketplace_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct CancelOffer<'info> {
+    #[account(
+        mut,
+        constraint = offer.is_active @ MarketplaceError::OfferNotActive,
+        constraint = offer.buyer == buyer.key() @ MarketplaceError::NotBuyer,
+    )]
+    pub offer: Account<'info, Offer>,
+
+    #[account(mut)]
+    pub buyer: Signer<'info>,
 }
 
 // ─── State ──────────────────────────────────────────────────
@@ -376,26 +697,27 @@ pub struct AcceptOffer<'info> {
 #[account]
 #[derive(InitSpace)]
 pub struct Listing {
-    pub seller: Pubkey,     // 32
-    pub monster: Pubkey,    // 32
-    pub item_mint: Pubkey,  // 32
-    pub price: u64,         // 8
-    pub amount: u64,        // 8
-    pub is_monster: bool,   // 1
-    pub is_active: bool,    // 1
-    pub created_at: i64,    // 8
-    pub bump: u8,           // 1
+    pub seller: Pubkey,         // 32
+    pub monster_mint: Pubkey,   // 32
+    pub item_mint: Pubkey,      // 32
+    pub price: u64,             // 8
+    pub amount: u64,            // 8
+    pub is_monster: bool,       // 1
+    pub is_active: bool,        // 1
+    pub created_at: i64,        // 8
+    pub bump: u8,               // 1
 }
 
 #[account]
 #[derive(InitSpace)]
 pub struct Offer {
-    pub buyer: Pubkey,      // 32
-    pub listing: Pubkey,    // 32
-    pub amount: u64,        // 8
-    pub is_active: bool,    // 1
-    pub created_at: i64,    // 8
-    pub bump: u8,           // 1
+    pub buyer: Pubkey,          // 32
+    pub listing: Pubkey,        // 32
+    pub amount: u64,            // 8
+    pub is_active: bool,        // 1
+    pub created_at: i64,        // 8
+    pub expires_at: i64,        // 8
+    pub bump: u8,               // 1
 }
 
 #[error_code]
@@ -412,8 +734,18 @@ pub enum MarketplaceError {
     NotItemListing,
     #[msg("Not the seller")]
     NotSeller,
+    #[msg("Not the buyer")]
+    NotBuyer,
+    #[msg("Not the monster owner")]
+    NotMonsterOwner,
+    #[msg("Mint mismatch")]
+    MintMismatch,
     #[msg("Offer is not active")]
     OfferNotActive,
+    #[msg("Offer has expired")]
+    OfferExpired,
     #[msg("Listing mismatch")]
     ListingMismatch,
+    #[msg("Escrow vault mismatch")]
+    EscrowMismatch,
 }
