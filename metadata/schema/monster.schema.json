@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SOLMON Monster Metadata",
+  "description": "Metaplex-compatible metadata for SOLMON monster NFTs",
+  "type": "object",
+  "required": ["name", "description", "image", "attributes", "properties"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Monster name",
+      "maxLength": 32
+    },
+    "description": {
+      "type": "string",
+      "description": "Monster description",
+      "maxLength": 256
+    },
+    "image": {
+      "type": "string",
+      "description": "Arweave URI for sprite sheet"
+    },
+    "animation_url": {
+      "type": "string",
+      "description": "Arweave URI for animation (optional)"
+    },
+    "external_url": {
+      "type": "string",
+      "description": "Link to SOLMON explorer page"
+    },
+    "attributes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trait_type", "value"],
+        "properties": {
+          "trait_type": { "type": "string" },
+          "value": {},
+          "display_type": { "type": "string" }
+        }
+      }
+    },
+    "properties": {
+      "type": "object",
+      "required": ["species_id", "element", "rarity", "base_stats", "moves"],
+      "properties": {
+        "species_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "element": {
+          "type": "string",
+          "enum": ["Fire", "Water", "Earth", "Electric", "Shadow", "Light"]
+        },
+        "rarity": {
+          "type": "string",
+          "enum": ["Common", "Uncommon", "Rare", "Legendary", "Mythic"]
+        },
+        "evolution": {
+          "type": "object",
+          "properties": {
+            "evolves_to": { "type": "integer" },
+            "level_required": { "type": "integer" }
+          }
+        },
+        "base_stats": {
+          "type": "object",
+          "required": ["hp", "atk", "def", "spd", "sp_atk", "sp_def"],
+          "properties": {
+            "hp":     { "type": "integer", "minimum": 1, "maximum": 255 },
+            "atk":    { "type": "integer", "minimum": 1, "maximum": 255 },
+            "def":    { "type": "integer", "minimum": 1, "maximum": 255 },
+            "spd":    { "type": "integer", "minimum": 1, "maximum": 255 },
+            "sp_atk": { "type": "integer", "minimum": 1, "maximum": 255 },
+            "sp_def": { "type": "integer", "minimum": 1, "maximum": 255 }
+          }
+        },
+        "moves": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "ability_id": { "type": "integer" },
+        "generation": { "type": "integer" }
+      }
+    }
+  }
+}

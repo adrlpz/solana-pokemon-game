@@ -1,0 +1,32 @@
+{
+  "name": "Emberpup",
+  "description": "A young Fire-type monster. Loyal and fierce, Emberpup's tail flame grows brighter with each battle victory.",
+  "image": "https://arweave.net/PLACEHOLDER_SVG_HASH",
+  "external_url": "https://solmon.game/monster/0",
+  "attributes": [
+    { "trait_type": "Species ID", "value": 0, "display_type": "number" },
+    { "trait_type": "Element", "value": "Fire" },
+    { "trait_type": "Rarity", "value": "Uncommon" },
+    { "trait_type": "Generation", "value": 1, "display_type": "number" }
+  ],
+  "properties": {
+    "species_id": 0,
+    "element": "Fire",
+    "rarity": "Uncommon",
+    "evolution": {
+      "evolves_to": 1,
+      "level_required": 30
+    },
+    "base_stats": {
+      "hp": 52,
+      "atk": 68,
+      "def": 45,
+      "spd": 60,
+      "sp_atk": 42,
+      "sp_def": 38
+    },
+    "moves": [25, 1, 27, 0],
+    "ability_id": 0,
+    "generation": 1
+  }
+}
