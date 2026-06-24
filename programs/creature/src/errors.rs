@@ -28,4 +28,25 @@ pub enum CreatureError {
 
     #[msg("Invalid move ID")]
     InvalidMove,
+
+    #[msg("Invalid registry chunk index — must be 0-3")]
+    InvalidChunkIndex,
+
+    #[msg("Registry already initialized for this chunk")]
+    RegistryAlreadyInitialized,
+
+    #[msg("Invalid EV — stat EV cannot exceed 252")]
+    EVLimitPerStat,
+
+    #[msg("Total EVs cannot exceed 510")]
+    EVLimitTotal,
+
+    #[msg("Invalid stat index — must be 0-5")]
+    InvalidStatIndex,
+
+    #[msg("Not authorized — registry admin only")]
+    NotRegistryAuthority,
+
+    #[msg("Math overflow")]
+    MathOverflow,
 }
