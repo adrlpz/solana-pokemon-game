@@ -113,8 +113,7 @@ jobs:
               echo "📤 Deploying $prog..."
               solana program deploy "$SO" \
                 --program-id "$KP" \
-                --commitment confirmed \
-                --max-signatures 600
+                --commitment confirmed
               ID=$(solana-keygen pubkey "$KP")
               echo "✅ $prog deployed: $ID"
             fi
