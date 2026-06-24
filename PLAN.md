@@ -364,12 +364,13 @@ pub fn accept_offer(ctx: Context<AcceptOffer>) -> Result<>()
 - Alerts: PagerDuty for program errors
 
 ### 7.3 Launch Checklist
-- [ ] All 4 programs deployed + verified
-- [ ] Frontend live + wallet connect tested
-- [ ] Explorer links working (Solscan)
-- [ ] Discord/Twitter community ready
-- [ ] Initial monster distribution (airdrop to early supporters)
-- [ ] Marketplace seeded with team monsters
+See `docs/LAUNCH_RUNBOOK.md` for full checklist.
+
+### 7.4 Deploy Scripts (DONE)
+- `scripts/deploy/mainnet.sh` — program deployment with pre-flight checks
+- `scripts/deploy/init-mainnet.sh` — token + registry initialization
+- `.env.mainnet.example` — environment template
+- `docs/LAUNCH_RUNBOOK.md` — D-14 to D+7 launch timeline, emergency procedures
 
 ---
 
